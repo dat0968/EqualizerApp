@@ -21,9 +21,7 @@ public class BootReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
 
-        if (Intent.ACTION_BOOT_COMPLETED.equals(action) ||
-                Intent.ACTION_MY_PACKAGE_REPLACED.equals(action) ||
-                Intent.ACTION_PACKAGE_REPLACED.equals(action)) {
+        if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
 
             Log.d(TAG, "Boot completed or package updated, starting MusicEqualizerService");
 
@@ -44,13 +42,13 @@ public class BootReceiver extends BroadcastReceiver {
     private void startEqualizerService(Context context) {
         try {
             // Kiểm tra Notification Access
-            if (!isNotificationListenerEnabled(context)) {
-                // Dẫn user bật quyền Notification Access
-                Intent intent = new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS");
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); // quan trọng khi start từ BroadcastReceiver
-                context.startActivity(intent);
-                Log.w(TAG, "Notification Access not enabled, opening settings");
-            }
+//            if (!isNotificationListenerEnabled(context)) {
+//                // Dẫn user bật quyền Notification Access
+//                Intent intent = new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS");
+//                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); // quan trọng khi start từ BroadcastReceiver
+//                context.startActivity(intent);
+//                Log.w(TAG, "Notification Access not enabled, opening settings");
+//            }
             Intent serviceIntent = new Intent(context, MusicEqualizerService.class);
             serviceIntent.putExtra("boot_startup", true);
 
@@ -66,17 +64,17 @@ public class BootReceiver extends BroadcastReceiver {
             Log.e(TAG, "Failed to start MusicEqualizerService", e);
         }
     }
-    private boolean isNotificationListenerEnabled(Context context) {
-        String enabledListeners = Settings.Secure.getString(
-                context.getContentResolver(),
-                "enabled_notification_listeners"
-        );
-        if (enabledListeners == null) return false;
-
-        // Tên class đầy đủ của listener
-        String listener = context.getPackageName() + "/" + MyNotificationListener.class.getName();
-        return enabledListeners.contains(listener);
-    }
+//    private boolean isNotificationListenerEnabled(Context context) {
+//        String enabledListeners = Settings.Secure.getString(
+//                context.getContentResolver(),
+//                "enabled_notification_listeners"
+//        );
+//        if (enabledListeners == null) return false;
+//
+//        // Tên class đầy đủ của listener
+//        String listener = context.getPackageName() + "/" + MyNotificationListener.class.getName();
+//        return enabledListeners.contains(listener);
+//    }
 
 
 }

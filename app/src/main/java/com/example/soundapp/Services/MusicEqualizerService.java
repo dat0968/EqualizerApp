@@ -4,7 +4,9 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.media.audiofx.BassBoost;
 import android.media.audiofx.Equalizer;
 import android.os.Build;
@@ -33,10 +35,16 @@ public class MusicEqualizerService extends Service {
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
-        startForegroundService();
-        applyGlobalEqualizer();
+        startForeground(1, buildNotification());
+        applySavedEqualizer(this);
     }
-
+    private Notification buildNotification() {
+        return new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("Equalizer Service")
+                .setContentText("Equalizer is applied after boot")
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build();
+    }
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
@@ -61,20 +69,25 @@ public class MusicEqualizerService extends Service {
         startForeground(NOTIFICATION_ID, notification);
     }
 
-    private void applyGlobalEqualizer() {
+    private void applySavedEqualizer(Context context) {
         try {
-            if (globalEqualizer != null) globalEqualizer.release();
-            if (globalBassBoost != null) globalBassBoost.release();
+            int audioSessionId = 0; // 0 = tất cả media playback
+            Equalizer equalizer = new Equalizer(0, audioSessionId);
+            equalizer.setEnabled(true);
 
-            globalEqualizer = new Equalizer(0, 0);
-            globalBassBoost = new BassBoost(0, 0);
+            SharedPreferences prefs = context.getSharedPreferences("EQ_PREFS", Context.MODE_PRIVATE);
+            short numberOfBands = equalizer.getNumberOfBands();
 
-            globalEqualizer.setEnabled(true);
-            globalBassBoost.setEnabled(true);
+            for (short i = 0; i < numberOfBands; i++) {
+                int level = prefs.getInt("band" + i, 0);
+                equalizer.setBandLevel(i, (short) level);
+                Log.d(TAG, "Set band " + i + " = " + level);
+            }
 
-            Log.d(TAG, "Global equalizer applied");
+            Log.d(TAG, "Equalizer applied successfully in service");
+
         } catch (Exception e) {
-            Log.e(TAG, "Failed to apply global equalizer", e);
+            Log.e(TAG, "Error applying equalizer: " + e.getMessage());
         }
     }
 
@@ -97,27 +110,31 @@ public class MusicEqualizerService extends Service {
         }
     }
 
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && "apply_eq".equals(intent.getStringExtra("action"))) {
-            String packageName = intent.getStringExtra("packageName");
-            int sessionId = intent.getIntExtra("audioSessionId", 0);
-            applyEqualizerToSession(sessionId, packageName);
-        }
-        return START_STICKY;
-    }
+//    @Override
+//    public int onStartCommand(Intent intent, int flags, int startId) {
+//        if (intent != null && "apply_eq".equals(intent.getStringExtra("action"))) {
+//            String packageName = intent.getStringExtra("packageName");
+//            int sessionId = intent.getIntExtra("audioSessionId", 0);
+//            applyEqualizerToSession(sessionId, packageName);
+//        }
+//        return START_STICKY;
+//    }
 
     @Override
     public void onDestroy() {
+//        super.onDestroy();
+//        if (globalEqualizer != null) globalEqualizer.release();
+//        if (globalBassBoost != null) globalBassBoost.release();
+//
+//        for (Equalizer eq : activeEqualizers.values()) if (eq != null) eq.release();
+//        for (BassBoost bb : activeBassBoosts.values()) if (bb != null) bb.release();
+//
+//        activeEqualizers.clear();
+//        activeBassBoosts.clear();
         super.onDestroy();
-        if (globalEqualizer != null) globalEqualizer.release();
-        if (globalBassBoost != null) globalBassBoost.release();
-
-        for (Equalizer eq : activeEqualizers.values()) if (eq != null) eq.release();
-        for (BassBoost bb : activeBassBoosts.values()) if (bb != null) bb.release();
-
-        activeEqualizers.clear();
-        activeBassBoosts.clear();
+        if (globalEqualizer != null) {
+            globalEqualizer.release();
+        }
     }
 
     @Nullable
