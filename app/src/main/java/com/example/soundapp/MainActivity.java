@@ -4,47 +4,61 @@ import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
-import android.media.MediaPlayer;
-import android.media.audiofx.Equalizer;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.SeekBar;
+import android.widget.Spinner;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
-import com.example.soundapp.Services.SoundService;
+import com.example.soundapp.Services.EqualizerService;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 public class MainActivity extends AppCompatActivity {
-    private Equalizer equalizer;
     private SeekBar[] seekBars;
     private TextView[] txtBands;
+    private Spinner spnPreset;
     private int numberOfBands = 5;
     SharedPreferences prefs;
-    private static final int NOTIFICATION_PERMISSION_CODE = 1;  // Hoặc bất kỳ số nguyên dương nào, ví dụ 100
+    private static final int NOTIFICATION_PERMISSION_CODE = 100;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         // Kiểm tra và yêu cầu quyền nếu cần
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_PERMISSION_CODE);
+            if (ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                        NOTIFICATION_PERMISSION_CODE);
+            } else {
+                ContextCompat.startForegroundService(this,
+                        new Intent(this, EqualizerService.class));
             }
+        } else {
+            ContextCompat.startForegroundService(this,
+                    new Intent(this, EqualizerService.class));
         }
+        prefs = getSharedPreferences("EQ_PREFS", MODE_PRIVATE);
 
-
-        prefs = getApplicationContext()
-                .getSharedPreferences("EQ_PREFS", MODE_PRIVATE);
-        Intent intent = new Intent(this, SoundService.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent); // Android 8+ cần startForegroundService
-        }
+        // Ánh xạ view
         seekBars = new SeekBar[numberOfBands];
         txtBands = new TextView[numberOfBands];
+        spnPreset = findViewById(R.id.spinnerPreset);
+
         for (int i = 0; i < numberOfBands; i++) {
             // giả sử id theo tên seekBarBand1, seekBarBand2,... và txtBand1, txtBand2,...
             int seekId = getResources().getIdentifier("seekBarBand" + (i + 1), "id", getPackageName());
@@ -53,46 +67,76 @@ public class MainActivity extends AppCompatActivity {
             seekBars[i] = findViewById(seekId);
             txtBands[i] = findViewById(txtId);
         }
-        setupEqualizer();
+        setupSeekBars();
     }
     /** Thiết lập Equalizer system-wide */
-    private void setupEqualizer() {
-        // audioSession = 0 → tác động toàn bộ audio session
-        equalizer = new Equalizer(0, 0);
-        equalizer.setEnabled(true);
+    private void setupSeekBars() {
+//        List<String> presetNames = new  ArrayList<>();
+//        for(int i = 0; i < numberOfPresets; i++){
+//            presetNames.add(equalizer.getPresetName(i));
+//        }
+        Set<String> savedPresets = prefs.getStringSet("nameOfPresets", new HashSet<>());
 
-        short minLevel = equalizer.getBandLevelRange()[0];
-        short maxLevel = equalizer.getBandLevelRange()[1];
-        short totalBands = equalizer.getNumberOfBands();
+        // Nếu muốn dùng lại dạng List
+        List<String> presetNamesRestored = new ArrayList<>(savedPresets);
+        // Nếu muốn log phần tử đầu tiên
+        if (!presetNamesRestored.isEmpty()) {
+            Log.d("presetNamesRestored", "First preset: " + presetNamesRestored.get(0));
+        }
+        // gắn adapter cho mỗi spinner
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                this,
+                android.R.layout.simple_spinner_item,
+                presetNamesRestored
+        );
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spnPreset.setAdapter(adapter);
+        // Xử lý sự kiện chọn item (nếu cần)
+        spnPreset.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                String selectedPreset = presetNamesRestored.get(position);
+                Intent intent = new Intent(MainActivity.this, EqualizerService.class);
+                intent.setAction(EqualizerService.ACTION_USE_PRESET);
+                intent.putExtra(EqualizerService.EXTRA_PRESET_POS, position);
+                Log.d("Spinner", "Preset được chọn: " + selectedPreset);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent);
+                } else {
+                    startService(intent);
+                }
+            }
 
-        int bandsToUse = Math.min(numberOfBands, totalBands);
-
-        for (short i = 0; i < bandsToUse; i++) {
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) { }
+        });
+        for (short i = 0; i < numberOfBands; i++) {
             final short band = i;
-            int centerFreqHz = equalizer.getCenterFreq(band) / 1000;
+            // Lấy level đã lưu trong SharedPreferences để set progress
+            int savedProgress = prefs.getInt("band" + band, 50); // default 50%
+            seekBars[band].setProgress(savedProgress);
 
-            txtBands[i].setText(centerFreqHz + " Hz");
-
-            seekBars[i].setMax(maxLevel - minLevel);
-            int savedProgress = prefs.getInt("band" + band, (maxLevel - minLevel) / 2);
-//            if (savedProgress < 0 || savedProgress > (maxLevel - minLevel)) {
-//                savedProgress = (maxLevel - minLevel) / 2; // Đặt lại nếu giá trị không hợp lệ
-//            }
-            seekBars[i].setProgress(savedProgress);
-            short restoredLevel = (short) (savedProgress + minLevel);
-            equalizer.setBandLevel(band, restoredLevel);
-            seekBars[i].setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            seekBars[band].setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
                 @Override
                 public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                    short level = (short) (progress + minLevel);
                     if (!fromUser) return;
-                    prefs.edit()
-                            .putInt("band" + band, progress)
-                            .apply();
-                    try {
-                        equalizer.setBandLevel(band, level);
-                    } catch (UnsupportedOperationException e) {
-                        Log.e("Equalizer", "Thiết bị không hỗ trợ setBandLevel", e);
+
+                    prefs.edit().putInt("band" + band, progress).apply();
+
+                    int savedValue = prefs.getInt("band" + band, -1);
+                    Log.d("BANDLOG", "onProgressChanged: " + savedValue);
+                    // Gửi intent tới Service để set band level
+                    int level = seekBar.getProgress(); // level có thể scale theo min/max nếu cần
+
+                    Intent intent = new Intent(MainActivity.this, EqualizerService.class);
+                    intent.setAction(EqualizerService.ACTION_SET_BAND);
+                    intent.putExtra(EqualizerService.EXTRA_BAND, (int) band);
+                    intent.putExtra(EqualizerService.EXTRA_LEVEL, level);
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(intent);
+                    } else {
+                        startService(intent);
                     }
                 }
 
@@ -101,5 +145,4 @@ public class MainActivity extends AppCompatActivity {
             });
         }
     }
-
 }

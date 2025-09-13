@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Service permissions -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_AUDIO_PLAYBACK"
         tools:ignore="SystemPermissionTypo" />
     <!-- Boot permissions -->
@@ -52,21 +52,11 @@
 
         <!-- Original SoundService -->
         <service
-            android:name=".Services.SoundService"
+            android:name=".Services.EqualizerService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback"
-            tools:ignore="ForegroundServicePermission"
-            />
+            android:foregroundServiceType="specialUse" />
 
-        <!-- Enhanced MusicEqualizerService -->
-        <service
-            android:name=".Services.MusicEqualizerService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="mediaPlayback"
-            tools:ignore="ForegroundServicePermission">
-        </service>
 <!--        <service-->
 <!--            android:name=".Listener.MyNotificationListener"-->
 <!--            android:label="@string/app_name"-->
