@@ -1,7 +1,11 @@
 package com.example.soundapp;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -31,7 +35,10 @@ public class MainActivity extends AppCompatActivity {
     private Spinner spnPreset;
     private int numberOfBands = 5;
     SharedPreferences prefs;
+    private boolean isSpinnerInitialized = false;
+    private boolean isPresetSetup = false;
     private static final int NOTIFICATION_PERMISSION_CODE = 100;
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -67,21 +74,27 @@ public class MainActivity extends AppCompatActivity {
             seekBars[i] = findViewById(seekId);
             txtBands[i] = findViewById(txtId);
         }
-        setupSeekBars();
+        IntentFilter filter = new IntentFilter(EqualizerService.ACTION_READY);
+        registerReceiver(eqReadyReceiver, filter);
     }
-    /** Thiết lập Equalizer system-wide */
-    private void setupSeekBars() {
-//        List<String> presetNames = new  ArrayList<>();
-//        for(int i = 0; i < numberOfPresets; i++){
-//            presetNames.add(equalizer.getPresetName(i));
-//        }
-        Set<String> savedPresets = prefs.getStringSet("nameOfPresets", new HashSet<>());
-
-        // Nếu muốn dùng lại dạng List
-        List<String> presetNamesRestored = new ArrayList<>(savedPresets);
-        // Nếu muốn log phần tử đầu tiên
-        if (!presetNamesRestored.isEmpty()) {
-            Log.d("presetNamesRestored", "First preset: " + presetNamesRestored.get(0));
+    private final BroadcastReceiver eqReadyReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            setupSeekBars();
+            setupPresent();
+        }
+    };
+    private void setupPresent(){
+        if (isPresetSetup) {
+            Log.d("MainActivity", "Spinner đã được khởi tạo, bỏ qua setupPresent");
+            return;
+        }
+        prefs = getSharedPreferences("EQ_PREFS", MODE_PRIVATE);
+        int numberOfPresets = prefs.getInt("numberOfPresets", 1);
+        List<String> presetNamesRestored = new ArrayList<>();
+        for(int i = 0; i < numberOfPresets; i++){
+            presetNamesRestored.add(prefs.getString("preset" + i, ""));
+            Log.d("preset", prefs.getString("preset" + i, ""));
         }
         // gắn adapter cho mỗi spinner
         ArrayAdapter<String> adapter = new ArrayAdapter<>(
@@ -91,15 +104,24 @@ public class MainActivity extends AppCompatActivity {
         );
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spnPreset.setAdapter(adapter);
+        isPresetSetup = true;
         // Xử lý sự kiện chọn item (nếu cần)
         spnPreset.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @SuppressLint("UnspecifiedRegisterReceiverFlag")
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                String selectedPreset = presetNamesRestored.get(position);
+                if (!isSpinnerInitialized) {
+                    isSpinnerInitialized = true;
+                    return; // Bỏ qua lần gọi đầu tiên
+                }
+                // Lưu preset vào SharedPreferences
+                SharedPreferences prefs = getSharedPreferences("EQ_PREFS", MODE_PRIVATE);
+                prefs.edit().putInt("selectedPreset", position).apply();
+
+                // Gửi Intent
                 Intent intent = new Intent(MainActivity.this, EqualizerService.class);
                 intent.setAction(EqualizerService.ACTION_USE_PRESET);
                 intent.putExtra(EqualizerService.EXTRA_PRESET_POS, position);
-                Log.d("Spinner", "Preset được chọn: " + selectedPreset);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     startForegroundService(intent);
                 } else {
@@ -110,6 +132,8 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onNothingSelected(AdapterView<?> parent) { }
         });
+    }
+    private void setupSeekBars() {
         for (short i = 0; i < numberOfBands; i++) {
             final short band = i;
             // Lấy level đã lưu trong SharedPreferences để set progress
@@ -145,4 +169,5 @@ public class MainActivity extends AppCompatActivity {
             });
         }
     }
+    @Override protected void onStop() { super.onStop(); unregisterReceiver(eqReadyReceiver); }
 }
