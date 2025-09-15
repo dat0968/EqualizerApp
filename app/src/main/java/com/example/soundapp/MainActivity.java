@@ -37,6 +37,7 @@ public class MainActivity extends AppCompatActivity {
     SharedPreferences prefs;
     private boolean isSpinnerInitialized = false;
     private boolean isPresetSetup = false;
+    private int minLevel, maxLevel;
     private static final int NOTIFICATION_PERMISSION_CODE = 100;
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override
@@ -80,6 +81,8 @@ public class MainActivity extends AppCompatActivity {
     private final BroadcastReceiver eqReadyReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            minLevel = prefs.getInt("minLevel", -1500);
+            maxLevel = prefs.getInt("maxLevel", 1500);
             setupSeekBars();
             setupPresent();
         }
@@ -92,10 +95,11 @@ public class MainActivity extends AppCompatActivity {
         prefs = getSharedPreferences("EQ_PREFS", MODE_PRIVATE);
         int numberOfPresets = prefs.getInt("numberOfPresets", 1);
         List<String> presetNamesRestored = new ArrayList<>();
+
         for(int i = 0; i < numberOfPresets; i++){
             presetNamesRestored.add(prefs.getString("preset" + i, ""));
-            Log.d("preset", prefs.getString("preset" + i, ""));
         }
+        presetNamesRestored.add("Custom");
         // gắn adapter cho mỗi spinner
         ArrayAdapter<String> adapter = new ArrayAdapter<>(
                 this,
@@ -103,20 +107,25 @@ public class MainActivity extends AppCompatActivity {
                 presetNamesRestored
         );
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        int savedPreset = prefs.getInt("selectedPreset", presetNamesRestored.size());
+
+
         spnPreset.setAdapter(adapter);
+        spnPreset.setSelection(savedPreset, false);
         isPresetSetup = true;
         // Xử lý sự kiện chọn item (nếu cần)
         spnPreset.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @SuppressLint("UnspecifiedRegisterReceiverFlag")
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (!isSpinnerInitialized) {
-                    isSpinnerInitialized = true;
-                    return; // Bỏ qua lần gọi đầu tiên
-                }
+//                if (!isSpinnerInitialized) {
+//                    isSpinnerInitialized = true;
+//                    return; // Bỏ qua lần gọi đầu tiên
+//                }
+
                 // Lưu preset vào SharedPreferences
                 SharedPreferences prefs = getSharedPreferences("EQ_PREFS", MODE_PRIVATE);
-                prefs.edit().putInt("selectedPreset", position).apply();
+                prefs.edit().putInt("selectedPreset", position).commit();
 
                 // Gửi Intent
                 Intent intent = new Intent(MainActivity.this, EqualizerService.class);
@@ -134,34 +143,45 @@ public class MainActivity extends AppCompatActivity {
         });
     }
     private void setupSeekBars() {
+
         for (short i = 0; i < numberOfBands; i++) {
             final short band = i;
-            // Lấy level đã lưu trong SharedPreferences để set progress
-            int savedProgress = prefs.getInt("band" + band, 50); // default 50%
-            seekBars[band].setProgress(savedProgress);
+            seekBars[band].setMax(maxLevel - minLevel);
+            int savedLevel = prefs.getInt("band" + band, 0);
+            seekBars[band].setProgress(savedLevel - minLevel);
+            txtBands[band].setText(savedLevel / 100 + " dB");
+
 
             seekBars[band].setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
                 @Override
                 public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                     if (!fromUser) return;
+                    short level = (short) (progress + minLevel);
+                    Log.d("setupband", "setupbandactivity: " + level);
+                    txtBands[band].setText(level / 100 + " dB");
+//                    prefs.edit().putInt("band" + band, level).commit();
 
-                    prefs.edit().putInt("band" + band, progress).apply();
 
-                    int savedValue = prefs.getInt("band" + band, -1);
-                    Log.d("BANDLOG", "onProgressChanged: " + savedValue);
-                    // Gửi intent tới Service để set band level
-                    int level = seekBar.getProgress(); // level có thể scale theo min/max nếu cần
 
                     Intent intent = new Intent(MainActivity.this, EqualizerService.class);
                     intent.setAction(EqualizerService.ACTION_SET_BAND);
                     intent.putExtra(EqualizerService.EXTRA_BAND, (int) band);
-                    intent.putExtra(EqualizerService.EXTRA_LEVEL, level);
-
+                    //intent.putExtra(EqualizerService.EXTRA_LEVEL, level);
+                    prefs.edit().putInt("band" + band, level).commit();
+                    int numberOfPresets = prefs.getInt("numberOfPresets", 1);
+                    int position = prefs.getInt("selectedPreset", -1);
+                    if (position == numberOfPresets) {
+                        prefs.edit().putInt("bandCustom" + band, level).commit();
+                        Log.d("bandCustomActivity", "bandCustom đã lưu");
+                    }
+                    int savedPreset = numberOfPresets;
+                    spnPreset.setSelection(savedPreset, false);
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         startForegroundService(intent);
                     } else {
                         startService(intent);
                     }
+
                 }
 
                 @Override public void onStartTrackingTouch(SeekBar seekBar) {}
@@ -170,4 +190,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
     @Override protected void onStop() { super.onStop(); unregisterReceiver(eqReadyReceiver); }
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
+    @Override
+    protected void onStart() {
+        super.onStart();
+        IntentFilter filter = new IntentFilter(EqualizerService.ACTION_READY);
+        registerReceiver(eqReadyReceiver, filter);
+    }
 }

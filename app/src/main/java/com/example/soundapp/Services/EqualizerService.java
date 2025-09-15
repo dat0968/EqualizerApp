@@ -46,6 +46,28 @@ public class EqualizerService extends Service {
         }
         equalizer = new Equalizer(0, 0);
         equalizer.setEnabled(true);
+        SharedPreferences prefs = getSharedPreferences("EQ_PREFS", MODE_PRIVATE);
+        int numberOfPresets = equalizer.getNumberOfPresets();
+        int position = prefs.getInt("selectedPreset", numberOfPresets);
+
+        if(position >= 0 && position < numberOfPresets){
+            equalizer.usePreset((short) position);
+        }
+
+        Log.d("Spinner", "Vị trí Preset được chọn: " + position);
+        prefs.edit().putInt("selectedPreset", position).commit();
+        for (short b = 0; b < equalizer.getNumberOfBands(); b++) {
+            if(position >= 0 && position < numberOfPresets){
+                prefs.edit().putInt("band" + b, equalizer.getBandLevel(b)).commit();
+            }else{
+                int customLevel = prefs.getInt("bandCustom" + b, prefs.getInt("band" + b, 0));
+                prefs.edit().putInt("band" + b, customLevel
+
+                ).commit();
+            }
+
+        }
+
         applySavedEqualizer();
         //LoadDataPresent();
     }
@@ -55,21 +77,35 @@ public class EqualizerService extends Service {
         SharedPreferences prefs = getSharedPreferences("EQ_PREFS", MODE_PRIVATE);
         if(intent != null && ACTION_USE_PRESET.equals(intent.getAction())){
             int position = intent.getIntExtra(EXTRA_PRESET_POS, 0);
-            equalizer.usePreset((short) position);
-            Log.d("Spinner", "Vị trí Preset được chọn: " + position);
-            for (short b = 0; b < equalizer.getNumberOfBands(); b++) {
-                prefs.edit().putInt("band" + b, equalizer.getBandLevel(b)).commit();
+            int numberOfPresets = equalizer.getNumberOfPresets();
+            if(position >= 0 && position < numberOfPresets){
+                equalizer.usePreset((short) position);
+                for (short b = 0; b < equalizer.getNumberOfBands(); b++) {
+                    prefs.edit().putInt("band" + b, equalizer.getBandLevel(b)).commit();
+                }
+            }else {
+                for (short b = 0; b < equalizer.getNumberOfBands(); b++) {
+                    // đọc bandCustom, nếu chưa có fallback về 0
+                    int customLevel = prefs.getInt("bandCustom" + b, prefs.getInt("band" + b, 0));
+                    equalizer.setBandLevel(b, (short) customLevel);
+                    prefs.edit().putInt("band" + b, customLevel).commit();
+                }
             }
-            applySavedEqualizer();
+            Log.d("Spinner", "Vị trí Preset được chọn: " + position);
+            prefs.edit().putInt("selectedPreset", position).commit();
         }
         if (intent != null && ACTION_SET_BAND.equals(intent.getAction())) {
             int band = intent.getIntExtra(EXTRA_BAND, 0);
-            int level = intent.getIntExtra(EXTRA_LEVEL, 0);
+//            int level = intent.getIntExtra(EXTRA_LEVEL, 0);
+            int level = prefs.getInt("band" + band, 0);
+            Log.d("setupband", "setupbandservice: " + level);
             try {
                 equalizer.setBandLevel((short) band, (short) level);
-
-                prefs.edit().putInt("band" + band, level).apply();
-                applySavedEqualizer();
+                int numberOfPresets = equalizer.getNumberOfPresets();
+                int position = prefs.getInt("selectedPreset", -1);
+                prefs.edit().putInt("selectedPreset", numberOfPresets).commit();
+                prefs.edit().putInt("bandCustom" + band, level).commit();
+                prefs.edit().putInt("band" + band, level).commit();
 
             } catch (Exception e) {
                 Log.e(TAG, "setBandLevel failed", e);
@@ -79,6 +115,7 @@ public class EqualizerService extends Service {
             LoadDataPresent();
             readyPresent = false;
         }
+        applySavedEqualizer();
         Intent readyIntent = new Intent(ACTION_READY);
         sendBroadcast(readyIntent);
         return START_STICKY;
@@ -116,15 +153,10 @@ public class EqualizerService extends Service {
         try {
             if (equalizer == null) return;
             SharedPreferences prefs = getSharedPreferences("EQ_PREFS", Context.MODE_PRIVATE);
-            short minLevel = equalizer.getBandLevelRange()[0];
-            short maxLevel = equalizer.getBandLevelRange()[1];
-            int numberOfSteps = 20;
             short numberOfBands = equalizer.getNumberOfBands();
             for (short band = 0; band < numberOfBands; band++) {
-                int savedProgress = prefs.getInt("band" + band, 50);
-                float normalized = savedProgress / 100f;
-                short level = (short) (minLevel + (maxLevel - minLevel) * Math.pow(normalized, 2));
-                equalizer.setBandLevel(band, level);
+                int level = prefs.getInt("band" + band, 0);
+                equalizer.setBandLevel(band, (short)level);
             }
 
             Log.d(TAG, "Equalizer applied successfully in service");
